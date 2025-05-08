@@ -1,0 +1,1 @@
+This repository contains the analysis code for Treating Hearing Loss with Hearing Aids for the Prevention of Dementia and Cognitive Decline by Cribb et al. The list of R packages and their versions used for the project are contained in the renv.lock file - see the [renv documentation](https://rstudio.github.io/renv/articles/renv.html) for details.
