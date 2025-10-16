@@ -1,3 +1,9 @@
+## bootrsap
+get_boot_samples <- function(data){
+  rows <- sample(1:nrow(data), nrow(data), replace = TRUE)
+  data[rows,]
+}
+
 # my max
 
 my.max <- function(x) ifelse(!all(is.na(x)), max(x, na.rm=T), NA)
@@ -75,4 +81,24 @@ strip_lm <- function(model){
 
 my_round <- function(x, digits){
   formatC(x, digits = digits, format = "fg", drop0trailing = FALSE, flag = "#")
+}
+
+my_summarise <- function(data, stat){
+  data |> 
+    group_by(m, Y3M_HearingAid) |> 
+    summarise(across(everything(), ~ get_stat(., stat))) |> 
+    group_by(Y3M_HearingAid) |> summarise(across(-m, mean)) |> 
+    pivot_longer(-Y3M_HearingAid, names_to = "var") |> 
+    pivot_wider(names_from = Y3M_HearingAid) |> 
+    select(var, `1`, `0`) |> 
+    set_names(c("Variable", paste0("Yes_", stat), paste0("No_", stat)))
+}
+
+get_stat <- function(x, stat){
+  switch(stat,
+         mean = mean(x, na.rm=T),
+         lower = quantile(x, 0.25, na.rm=T),
+         upper = quantile(x, 0.75, na.rm=T),
+         count = sum(x, na.rm=T),
+         perc = sum(x, na.rm=T) / length(!is.na(x)) * 100)
 }

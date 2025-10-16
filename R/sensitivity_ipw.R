@@ -1,90 +1,26 @@
 ## IP weighting for time to event outcomes
-## sensitivity analysis for model specification
-
-options(future.globals.maxSize = Inf)
-
-ipw_all_outcomes <- function(data_list, gform_estimates, satterthwaite = TRUE){
-  
-  out_dem <- ipw_results(data_list, "Dem", TRUE)
-  out_imp <- ipw_results(data_list, "Imp", TRUE)
-  
-  ## Plot versus g-formula estimates
-  
-  # Dementia
-  plot_dem <- gform_vs_ipw(gform_estimates$Dem, out_dem)
-  
-  save_cuminc_plot(plot_dem, 
-                   "Dem_gform_ipw.png",
-                   "Dementia risk",
-                   ratios = FALSE,
-                   breaks = c(0,0.02,0.04,0.06,0.08,0.1),
-                   limits = c(0,0.1),
-                   legend.position = "right")
-  
-  # Impairment
-  plot_imp <- gform_vs_ipw(gform_estimates$Imp, out_imp)
-  
-  save_cuminc_plot(plot_imp, 
-                   "Imp_gform_ipw.png",
-                   "Cognitive impairment risk",
-                   ratios = FALSE,
-                   breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5),
-                   limits = c(0, 0.5),
-                   legend.position = "right")
-  
-  return(list(out_dem = out_dem, out_imp = out_imp, 
-              plot_dem = plot_dem, plot_imp = plot_imp))
-}
-
-## extract bootstrapped results 
-
-ipw_results <- function(data_list, outcome_var, satterthwaite = TRUE) {
-  
-  out <- lapply(
-    data_list,
-    FUN = function(.x) {
-      survival_results_ipw(
-        .x, 
-        outcome_var = outcome_var, 
-        satterthwaite = satterthwaite
-        )
-    }
-  )
-  
-  out <- get_risk(out)
-  
-  out <- add_intervals_survival(out, satterthwaite = satterthwaite)
-  
-  return(out)
-}
-
 survival_results_ipw <- function(data_list, 
-                                 outcome_var,
-                                 satterthwaite = satterthwaite){
+                                 outcome_var){
   
   long_list <- map(data_list,
                    to_long_survival,
                    outcome_var = outcome_var)
   
   # Remove all observations after first occurrence of death or outcome
-  
   long_list <- map(long_list,
                    remove_postevent,
                    outcome_var = outcome_var)
   
   # Estimate weighted risk
-  
   risks <- ipw_fit(long_list, outcome_var = outcome_var)
   
-  return(risks)
+  risks
 }
 
 
-### Estimate IP weights and calculated weighted risk 
+## Estimate IP weights and calculated weighted risk 
 
 ipw_fit <- function(data_list, outcome_var){
-  
-  ## ITT 
   
   # estimate treatment and censoring weights
   ipw_itt <- function(data, outcome_var){
@@ -145,17 +81,14 @@ ipw_fit <- function(data_list, outcome_var){
     )[, A := sub("Y_", "", A)]
     
     itt$RR <- ifelse(itt$RR == Inf, NA, itt$RR)
-    
-    setnames(itt,
-             c("k", "Risk ratio", "Risk difference", "Interv.", "g-form risk"))
-    
-    return(itt)
+    itt$estimand <- "ITT"
+    itt
   }
   
   ## AT
   ipw_at <- function(data, outcome_var){
     data$Y <- data[[outcome_var]]
-    data$A <- data$Y3M_HearingAidUse
+    data$A <- as.factor(round(as.numeric(data$Y3M_HearingAidUse)))
     data$A <- ifelse(data$A %in% c("2","3"), "2", data$A)
     data$A <- ifelse(data$A %in% c("4","5"), "3", data$A)
     
@@ -221,17 +154,16 @@ ipw_fit <- function(data_list, outcome_var){
     )[, A := sub("Y_", "", A)]
     
     at$RR <- ifelse(at$RR == Inf, NA, at$RR)
-    
-    setnames(at, 
-             c("k","Risk ratio", "Risk difference", "Interv.", "g-form risk"))
-    
-    return(at)
+    at$estimand <- "AT"
+    at
   }
   
-  itt_fit <- map(data_list, ipw_itt, outcome_var = outcome_var)
-  at_fit <- map(data_list, ipw_at, outcome_var = outcome_var)
+  estimates <- map(data_list, function(.x) {
+    itt <- ipw_itt(.x, outcome_var = outcome_var)
+    at <- ipw_at(.x, outcome_var = outcome_var)
+    bind_rows(itt, at)
+  })
   
-  return(list(itt_fit = itt_fit,
-              at_fit = at_fit))
+  # combine imputations 
+  bind_rows(estimates, .id = "m")
 }
-

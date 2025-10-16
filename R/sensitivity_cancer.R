@@ -1,90 +1,5 @@
-## Cancer negative outcome control
-
-cancer_outcome_control <- function(df_list){
-  source("analysis/cancer_formulas.R")
-  options(future.globals.maxSize = Inf)
-
-  ## analysis
-  
-  out <- get_results_cancer(df_list, "Cancer")
-  
-  save_cuminc_plot(plot_cumulative_inc(out$out),
-                   file_name = "cancer.png",
-                   y_label = "Cancer risk",
-                   breaks = c(0, 0.05, 0.1, 0.15, 0.2, 0.25),
-                   limits = c(0,0.25),
-                   rr_breaks = c(0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3),
-                   rr_limits = c(0.7,1.3)
-  )
-  
-  return(out)
-}
-
-## Functions for cancer negative outcome control sensitivity analysis
-get_results_cancer <-
-  function(data,
-           outcome_var,
-           comparator = "control",
-           satterthwaite = TRUE) {
-    
-    plan(multisession, workers = 3)
-    
-    result <- future_lapply(
-      data,
-      FUN = function(.x) {
-        survival_results_cancer(.x, outcome_var = outcome_var)
-      },
-      future.seed = 1234,
-      future.packages = "rms"
-    )
-    
-    out <- get_risk(result)
-    
-    out <- add_intervals_survival(out, satterthwaite = satterthwaite)
-    
-    # plot
-    
-    plots <-
-      plot_cumulative_inc(out, comparator = comparator)
-    
-    return(list(out = out, plot = plots))
-    
-  }
-
-
-survival_results_cancer <- function(data_list, 
-                                    outcome_var){
-  
-  long_list <- map(data_list, 
-                   to_long_survival_cancer, 
-                   outcome_var = outcome_var)
-  
-  # Remove all observations after first occurrence of death or outcome
-  
-  long_list <- map(long_list, 
-                   remove_postevent, 
-                   outcome_var = outcome_var)
-  
-  # intention to treat
-  
-  itt_fit <- map(long_list,
-                 my_gform_itt,
-                 outcome_var = outcome_var)
-  
-  # as treated
-  
-  at_fit <- map(long_list,
-                my_gform_at,
-                outcome_var = outcome_var)
-  
-  
-  return(list(itt_fit = itt_fit,
-              at_fit = at_fit))
-}
-
-### to long format 
-
-to_long_survival_cancer <- function(data, outcome_var) {
+## Data to long format 
+to_long_survival_cancer <- function(data, outcome_var = "Cancer") {
   # remove AV11 & AV12 variables (few/no events)
   data <- data |> dplyr::select(-contains("AV12"), -contains("AV11"))
   
@@ -239,5 +154,5 @@ to_long_survival_cancer <- function(data, outcome_var) {
   
   long <- long |> mutate(Death = if_else(Cens == 1, NA, Death))
   
-  return(long)
+  long
 }

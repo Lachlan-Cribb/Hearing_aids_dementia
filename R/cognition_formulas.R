@@ -57,6 +57,7 @@ cog_itt_form <-
     rcs(time, c(3,7,10)):BL_HVLT_Retention +
     rcs(time, c(3,7,10)):BL_HVLT_RDI +
     rcs(time, c(3,7,10)):BL_SDMT +
+    rcs(time, c(3,7,10)):Gender +
     A:BL_MS_OverallScore_C +
     A:BL_HVLT_DelayedRecall +
     A:BL_PCS +
@@ -68,7 +69,7 @@ cog_itt_form <-
     A:rcs(time, c(3,7,10)):BL_PCS +
     A:rcs(time, c(3,7,10)):AgeAtRand +
     A:rcs(time, c(3,7,10)):BL_Frailty_DAI50 +
-    A:rcs(time, c(3,7,10)):BLToneAvg_Better + 
+    A:rcs(time, c(3,7,10)):BLToneAvg_Better +
     rcs(AgeAtRand, c(71, 73, 80)):Gender +
     rcs(AgeAtRand, c(71, 73, 80)):BL_MS_OverallScore_C +
     rcs(AgeAtRand, c(71, 73, 80)):BLToneAvg_Better +
@@ -136,6 +137,7 @@ cog_at_form <-
   rcs(time, c(3,7,10)):BL_HVLT_Retention +
   rcs(time, c(3,7,10)):BL_HVLT_RDI +
   rcs(time, c(3,7,10)):BL_SDMT +
+  rcs(time, c(3,7,10)):Gender +
   A:BL_MS_OverallScore_C +
   A:BL_HVLT_DelayedRecall +
   A:BL_PCS +

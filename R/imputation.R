@@ -1,3 +1,19 @@
+### Run multiple imputation ###
+
+run_imputation <- function(data, m = 2) {
+
+  # Single imputation for variables with rare (<10 total) missing values
+  
+  df <- single_imputation(data)
+  
+  # standardise before imputation
+  
+  df <- standardise(df)
+  
+  # imputation
+  imputation(df, m)
+}
+
 ## Single imputation of variables with few (<10) missing
 
 single_imputation <- function(data){
@@ -21,13 +37,13 @@ single_imputation <- function(data){
   
   data[is.na(data$Racial), "Racial"] <- 
     sample(data$Racial, 1, replace = TRUE)
-
-  return(data)
+  
+  data
 }
 
 ## Multiple imputation
 
-imputation <- function(data, m, imp_name, complete_name){
+imputation <- function(data, m){
   
   ## Remove variables after AV10
   
@@ -83,7 +99,7 @@ imputation <- function(data, m, imp_name, complete_name){
   interaction_terms <- interaction_terms |>
     filter(!(V1 == "Y3M_HearingAid" &
                V2 == "Y3M_HearingAidUse"))
-
+  
   interaction_terms <- paste(interaction_terms$V1, interaction_terms$V2,
                              sep = ":")
   
@@ -217,7 +233,7 @@ imputation <- function(data, m, imp_name, complete_name){
           event_vars[str_ends(event_vars, "AV1|AV2|AV3|AV4|AV5|AV6")]] <- 0
   predmat[av10_vars,
           event_vars[str_ends(event_vars, "AV1|AV2|AV3|AV4|AV5|AV6|AV7")]] <- 0
-
+  
   # don't use AV9,10 variables to predict AV4 cognition (not available)
   predmat[c("AV4_COWAT", "AV4_HVLT_TotalRecall",
             "AV4_HVLT_Retention", "AV4_HVLT_RDI",
@@ -270,7 +286,7 @@ imputation <- function(data, m, imp_name, complete_name){
   }
   
   # Cancer 
-
+  
   for (i in 2:10) {
     predmat[paste("Cancer_AV", i, sep = ""), 
             c(paste("CVD_AV", i-1, sep = ""),paste("Dem_AV", i-1, sep = ""),
@@ -321,8 +337,8 @@ imputation <- function(data, m, imp_name, complete_name){
   
   # don't use AV4 cognitive variables to predict (too many missing)
   predmat[,c("AV4_COWAT", "AV4_HVLT_TotalRecall",
-            "AV4_HVLT_Retention", "AV4_HVLT_RDI",
-            "AV4_SDMT", "AV4_3MS_OverallScore_C")] <- 0
+             "AV4_HVLT_Retention", "AV4_HVLT_RDI",
+             "AV4_SDMT", "AV4_3MS_OverallScore_C")] <- 0
   
   # don't use Visual limit
   
@@ -360,7 +376,7 @@ imputation <- function(data, m, imp_name, complete_name){
   methods[int_terms] <- interaction_methods
   
   methods[methods=="pmm"] <- "elasticnet.pmm"
-
+  
   ## imputation 
   
   imp_out <- 
@@ -370,37 +386,22 @@ imputation <- function(data, m, imp_name, complete_name){
          predictorMatrix = predmat,
          maxit = 10)
   
-  # write mice output to disk
-  
-  write_rds(imp_out, 
-            here("imputed_data",
-                 "XT06",
-                 "mice_output",
-                 imp_name))
-  
   ### Extract complete variables 
   
-  imputed_data <- 
-    map(complete(imp_out, "all"), extract_complete, raw_data = data)
+  imputed_data <- map(complete(imp_out, "all"), extract_complete, raw_data = data)
   
   ## Remove interactions and non-linear terms from dataset
   
   quad_terms <- paste(quad_terms, "2", sep= "")
   
   remove_derived <- function(data){
-    data <- data |> 
-      select(-all_of(quad_terms), -contains("_by_"))
-    return(data)
+    data <- data |> select(-all_of(quad_terms), -contains("_by_"))
+    data
   }
   
   imputed_data <- map(imputed_data, remove_derived)
   
-  write_rds(imputed_data, 
-            here("imputed_data",
-                 "XT06",
-                 "imputed_datasets",
-                 complete_name))
-  
+  imputed_data
 }
 
 
@@ -416,6 +417,7 @@ extract_complete <- function(raw_data, imp_data){
       "HearingAidUse",
       "Y3M_HearingAidUse",
       "Y3M_HearingAid",
+      "risk_score",
       "EyesRate",
       "HearingProbs",
       "HearingProbs_2",
@@ -510,7 +512,7 @@ add_derived <-
     quadratic_terms <- paste(quadratic_terms, "2", sep = "")
     
     interaction_terms <- model_df |> 
-      dplyr::select(-all_of(quadratic_terms)) |> 
+      select(-all_of(quadratic_terms)) |> 
       names()
     
     return(list(model_df = model_df, 

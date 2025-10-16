@@ -1,6 +1,5 @@
 ## Consent for participation in ASPREE-XT (negative outcome control)
-
-xt_consent <- function(df_list){
+get_visit_data <- function(){
   
   # add visit data
   visits <- read_csv(
@@ -18,23 +17,20 @@ xt_consent <- function(df_list){
     visits |> 
     dplyr::select(Safehaven, ends_with("Possible"), ends_with("Conduct")) |>
     dplyr::select(Safehaven, starts_with("AV"), -contains("Reassess"))
-  
-  df_list <- map(df_list,
-                 ~ map(.x, 
-                       function(.x) left_join(.x, visits, by = "Safehaven")))
+}
+
+xt_consent_analysis <- function(df_list, visits_data){
+  df_list <- map(df_list, ~ left_join(.x, visits_data, by = "Safehaven"))
   
   ## add XT consent variable
-  
-  add_xt_consent <- function(data){
-    data$xt_consent <- ifelse(
-      rowSums(data |> dplyr::select(contains("_Possible")) == 7)>0, 0, 1)
-    return(data)
-  }
-  
-  df_list <- map(df_list, ~ map(.x, add_xt_consent))
-  
+  df_list <- map(
+    df_list, 
+    function(.x){
+      .x$xt_consent <- ifelse(rowSums(select(.x, contains("_Possible")) == 7)>0, 0, 1)
+      .x
+    })
+
   ## Regression formula
-  
   consent_analysis <- function(data){
     
     data$Y <- data$xt_consent
@@ -48,7 +44,7 @@ xt_consent <- function(df_list){
     ITT_0 <- predict(itt_mod, newdata = mutate(data, A = 0), type = "response")
     
     ## Dose-response 
-    data$A <- as.factor(data$Y3M_HearingAidUse)
+    data$A <- as.factor(round(as.numeric(data$Y3M_HearingAidUse)))
     data$A <- fct_collapse(data$A, "2" = c("2","3"), "3" = c("4","5"))
     
     at_mod <- glm(as.formula(consent_formula), data = data, family = binomial)
@@ -57,20 +53,28 @@ xt_consent <- function(df_list){
     AT_2 <- predict(at_mod, newdata = mutate(data, A = "2"), type = "response")
     AT_3 <- predict(at_mod, newdata = mutate(data, A = "3"), type = "response")
     
-    out <- tibble(ITT_0 = mean(ITT_0), ITT_1 = mean(ITT_1), 
-                  AT_1 = mean(AT_1), AT_2 = mean(AT_2), AT_3 = mean(AT_3))
-    
-    return(out)
+    tibble(
+      ITT_0 = mean(ITT_0), 
+      ITT_1 = mean(ITT_1), 
+      AT_1 = mean(AT_1), 
+      AT_2 = mean(AT_2), 
+      AT_3 = mean(AT_3))
   }
   
-  out <- map(df_list, ~ map_df(.x, consent_analysis), .progress = TRUE)
+  out <- map(df_list, consent_analysis)
   
-  out <- map(out, function(.x) mutate(.x, m = c(1,2)))
-  
-  out <- bind_rows(out, .id = "B")
-  
-  return(colMeans(out |> dplyr::select(-m, -B)))
+  out <- bind_rows(out, .id = "m")
+  out$m <- as.numeric(as.factor(out$m))
+  out
 }
+
+summarise_xt_consent <- function(result){
+  out <- bind_rows(result, .id = "b")
+  colMeans(out |> select(ITT_0,  ITT_1, AT_1, AT_2, AT_3))
+}
+  
+  
+
 
 
 

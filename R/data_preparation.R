@@ -1,17 +1,133 @@
-# load packages
-library(tidyverse)
-library(here)
-library(readxl)
-library(psych)
-library(haven)
+## Prepare data for main analysis
 
-## Load utility functions and imputation functions (for single imputation)
+process_data <- function(imputed_data,
+                         selfrated_hearing,
+                         truncate_threshold,
+                         remove_post_death) {
+  lapply(imputed_data, function(df) {
+    # Return continuous variables to their original scale
+    
+    df <- undo_standardise(df)
+    
+    # New ID variable (Safehaven no longer unique)
+    
+    df$ID <- 1:nrow(df)
+    
+    # apply eligibility criteria
+    
+    df <- apply_criteria(df, selfrated_hearing)
+    
+    # remove post-death observations
+    
+    if (isTRUE(remove_post_death)) {
+      df <- remove_postdeath(df)
+    }
+    
+    # calculate cognitive factor scores
+    
+    factors <- get_factorscores(df, truncate_threshold)
+    
+    df <- left_join(df, factors, by = "ID")
+    
+    # remove 3 from 3MS variable names
+    
+    names(df)[grepl("MS", names(df))] <-
+      gsub("_3", "_", names(df)[grepl("MS", names(df))])
+    
+    # set hearing aid use to factor
+    
+    df$Y3M_HearingAidUse <- as.factor(df$Y3M_HearingAidUse)
+    
+    df
+  })
+}
 
-source(here("..", "..", "utils", "SF12_scoring.R"))
+## Add cognitive impairment outcome variable and revert dementia to previous
+## dataset version (adjudication incomplete in latest ASPREE XT release)
 
-## Function to prepare data
+prepare_outcomes <- function(data, cind, events_xt04){
+  data <- map(data, add_imp, cind)
+  data <- map(data, revert_dementia, events_xt04)
+  data <- map(data, revert_cancer, events_xt04)
+  return(data)
+}
 
-prepare_data <- function(output_name) {
+## Add cognitive impairment to dataset
+
+add_imp <- function(data, cind){
+  
+  data <- left_join(data, cind, by = "Safehaven")
+  
+  data <- add_cind(data)
+  
+  data <- add_impairment(data)
+  
+  return(data)
+}
+
+## Create cognitive decline variables
+
+add_cind <- function(data) {
+  
+  cind_function <- function(data, visit) {
+    ifelse(
+      data$CIND_Any == 1 & data$CIND_DSR < (365 * visit), 1,
+      ifelse(data$CIND_Any == 0 &
+               data$CIND_DSR < (365 * visit), NA, 0)
+    )
+  }
+  
+  for(i in 1:10){
+    data[[paste0("CIND_AV",i)]] <- cind_function(data, i)
+  }
+  
+  return(data)
+}
+
+### Create cognitive impairment composite 
+
+add_impairment <- function(data){
+  
+  for(i in 1:10){
+    data[[paste0("Imp_AV", i)]] <- 
+      if_else(data[[paste0("CIND_AV", i)]] == 1 | 
+                data[[paste0("Dem_AV", i)]] == 1, 
+              1, data[[paste0("Dem_AV", i)]])
+  }
+  return(data)
+}
+
+## Replace XT06 dementia events with XT04
+
+revert_dementia <- function(data, events_xt04) {
+  
+  events_xt04 <- events_xt04 |>
+    select(Safehaven, contains("Dem_")) |>
+    select(-Dem_AV11, -Dem_AV12)
+  
+  # remove XT06 events and replace with XT04
+  data |> 
+    select(-contains("Dem")) |>
+    left_join(events_xt04, by = "Safehaven")
+}
+
+## Revert cancer to xt04 (complete outcome adjudication)
+revert_cancer <- function(data, events_xt04) {
+  
+  events_xt04 <- events_xt04 |>
+    select(Safehaven, contains("Cancer_")) |>
+    select(-Cancer_AV11, -Cancer_AV12)
+  
+  # remove XT06 events and replace with XT04
+  data |> 
+    select(-contains("Cancer")) |>
+    left_join(events_xt04, by = "Safehaven")
+}
+
+
+## Function to create dataset
+
+prepare_data <- function() {
   # read ALSOP medical baseline data
   
   alsop_bl <-
@@ -125,7 +241,7 @@ prepare_data <- function(output_name) {
   alsop$CochlearImplnt <-
     if_else(alsop$CochlearImplnt == 2, 1, alsop$CochlearImplnt)
   
-  ## Select required ALSOP variables
+  ## select required ALSOP variables
   
   alsop_vars <-
     select(
@@ -893,6 +1009,18 @@ prepare_data <- function(output_name) {
   
   apoe <- apoe |> select(Safehaven, apoe_e4)
   
+  ### Add biomarker risk score 
+  
+  risk_data <- read_csv(
+    here(
+      "..",
+      "..",
+      "Data",
+      "Dementia-risk-score",
+      "risk_data.csv"
+    )
+  )
+  
   #### Create final dataframe ####
   
   ## Join created df's
@@ -918,7 +1046,8 @@ prepare_data <- function(output_name) {
     left_join(alc_vars, by = "Safehaven") |>
     left_join(sf_vars, by = "Safehaven") |>
     left_join(derived_vars, by = "Safehaven") |>
-    left_join(apoe, by = "Safehaven")
+    left_join(apoe, by = "Safehaven") |> 
+    left_join(risk_data, by = "Safehaven")
   
   ## Remove some unneeded variables
   
@@ -990,7 +1119,5 @@ prepare_data <- function(output_name) {
   
   df_out2 <- df_out2 |> select(-Death_AV1, -Death_AV2, -Death_AV3)
   
-  ## Write created dataset to rds file
-  
-  write_rds(df_out2, here("data", output_name))
+  df_out2
 }
